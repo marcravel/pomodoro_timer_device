@@ -26,6 +26,22 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef enum {
+    IDLE,
+    WORK,
+    SHORT_BREAK,
+    LONG_BREAK,
+    PAUSED
+} PomodoroState;
+
+typedef enum {
+    EVENT_START,
+    EVENT_PAUSE,
+    EVENT_RESUME,
+    EVENT_TIMEOUT,
+    EVENT_RESET,
+    EVENT_SKIP
+} PomodoroEvent;
 
 /* USER CODE END PTD */
 
@@ -44,11 +60,16 @@ TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
 volatile uint32_t seconds = 0;
+volatile uint32_t minutes = 0;
+volatile uint32_t current_seconds = 0;
+volatile uint32_t goal = 25 * 60;
+volatile uint32_t pause_goal = 5 * 60;
 volatile uint32_t ms_counter = 0;
 volatile uint8_t current_digit = 0;
-uint8_t display_buffer[4] = {1, 2, 3, 4};
+uint8_t display_buffer[4] = {0, 0, 0, 0};
 
 const uint8_t digit_segments[10] = {
+	//GFEDCBA pattern
     0x3F, // 0: ABCDEF
     0x06, // 1: BC
     0x5B, // 2: ABDEG
@@ -68,6 +89,10 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
+void Display_SetSegments(uint8_t pattern);
+void reset_display_buffer();
+void Display_UpdateBuffer(uint32_t seconds);
+void Display_Scan(void);
 
 /* USER CODE END PFP */
 
@@ -108,7 +133,9 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim2);
-  volatile uint32_t current_seconds = 0;
+
+  PomodoroState state = WORK;
+  uint32_t current_ms = 0;
 
   /* USER CODE END 2 */
 
@@ -119,10 +146,44 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	if (seconds - current_seconds == 1) {
-		current_seconds = seconds;
-		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	switch (state)
+	{
+		case IDLE:
+			// Waiting for user to press Start
+
+			break;
+
+		case WORK:
+			// Run work timer
+			if (seconds >= goal) {
+				seconds = 0;
+				state = SHORT_BREAK;
+			}
+
+			break;
+
+		case SHORT_BREAK:
+			// Run short break timer
+			if (seconds >= pause_goal) {
+				seconds = 0;
+				state = WORK;
+			}
+
+			break;
+
+		case LONG_BREAK:
+			// Run long break timer
+			break;
+
+		case PAUSED:
+			// Keep timer stopped
+			break;
+
+		default:
+			break;
 	}
+
+	Display_UpdateBuffer(seconds);
   }
   /* USER CODE END 3 */
 }
@@ -224,13 +285,9 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, DSP_F_Pin|DSP_E_Pin|DSP_D_Pin|DSP_C_Pin
@@ -239,13 +296,6 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, DIG2_Pin|DIG3_Pin|DIG4_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : PC13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : DSP_F_Pin DSP_E_Pin DSP_D_Pin DSP_C_Pin
                            DSP_B_Pin DSP_A_Pin DSP_G_Pin DSP_DP_Pin
@@ -271,7 +321,55 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void Display_UpdateBuffer(uint32_t seconds)
+{
+    uint32_t min = (seconds / 60) % 100;
+    uint32_t sec = seconds % 60;
 
+    display_buffer[0] = min / 10;
+    display_buffer[1] = min % 10;
+    display_buffer[2] = sec / 10;
+    display_buffer[3] = sec % 10;
+}
+
+void Display_Scan(void)
+{
+    // 2. Disable all digits
+	HAL_GPIO_WritePin(DIG1_GPIO_Port, DIG1_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(DIG2_GPIO_Port, DIG2_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(DIG3_GPIO_Port, DIG3_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(DIG4_GPIO_Port, DIG4_Pin, GPIO_PIN_RESET);
+
+	// 3. Set segments for current digit
+	Display_SetSegments(digit_segments[display_buffer[current_digit]]);
+
+	// 4. Enable selected digit
+	switch (current_digit)
+	{
+		case 0:
+			HAL_GPIO_WritePin(DIG1_GPIO_Port, DIG1_Pin, GPIO_PIN_SET);
+			break;
+
+		case 1:
+			HAL_GPIO_WritePin(DIG2_GPIO_Port, DIG2_Pin, GPIO_PIN_SET);
+			break;
+
+		case 2:
+			HAL_GPIO_WritePin(DIG3_GPIO_Port, DIG3_Pin, GPIO_PIN_SET);
+			break;
+
+		case 3:
+			HAL_GPIO_WritePin(DIG4_GPIO_Port, DIG4_Pin, GPIO_PIN_SET);
+			break;
+	}
+	current_digit = (current_digit + 1) % 4;
+}
+
+void reset_display_buffer() {
+	for (int i = 0; i < 4; i++) {
+		display_buffer[i] = 0;
+	}
+}
 void Display_SetSegments(uint8_t pattern)
 {
     HAL_GPIO_WritePin(DSP_A_GPIO_Port, DSP_A_Pin,
@@ -300,43 +398,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM2)
     {
-    	ms_counter++;
+        // 1. Timekeeping
+        ms_counter++;
 
-		if (ms_counter >= 1000)
-		{
-			seconds++;
-			ms_counter = 0;
-		}
-		// Disable all digits
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(GPIOB,
-			GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5,
-			GPIO_PIN_RESET);
+        if (ms_counter >= 10)
+        {
+            ms_counter = 0;
+            seconds++;
+        }
 
-		// Set segments for current digit
-		Display_SetSegments(digit_segments[display_buffer[current_digit]]);
-
-		// Enable selected digit
-		switch (current_digit)
-		{
-			case 0:
-				HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
-				break;
-
-			case 1:
-				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
-				break;
-
-			case 2:
-				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_SET);
-				break;
-
-			case 3:
-				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
-				break;
-		}
-
-		current_digit = (current_digit + 1) % 4;
+        Display_Scan();
     }
 }
 
