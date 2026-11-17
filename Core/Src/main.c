@@ -59,12 +59,14 @@ typedef enum {
 TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
+volatile uint8_t time_running = 0;
+volatile uint32_t ms_counter = 0;
 volatile uint32_t seconds = 0;
 volatile uint32_t minutes = 0;
-volatile uint32_t current_seconds = 0;
+
 volatile uint32_t goal = 25 * 60;
 volatile uint32_t pause_goal = 5 * 60;
-volatile uint32_t ms_counter = 0;
+
 volatile uint8_t current_digit = 0;
 uint8_t display_buffer[4] = {0, 0, 0, 0};
 
@@ -135,7 +137,6 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim2);
 
   PomodoroState state = WORK;
-  uint32_t current_ms = 0;
 
   /* USER CODE END 2 */
 
@@ -150,20 +151,22 @@ int main(void)
 	{
 		case IDLE:
 			// Waiting for user to press Start
-
+			time_running = 0;
 			break;
 
 		case WORK:
 			// Run work timer
+			time_running = 1;
 			if (seconds >= goal) {
 				seconds = 0;
-				state = SHORT_BREAK;
+				state = IDLE;
 			}
 
 			break;
 
 		case SHORT_BREAK:
 			// Run short break timer
+			time_running = 1;
 			if (seconds >= pause_goal) {
 				seconds = 0;
 				state = WORK;
@@ -177,6 +180,7 @@ int main(void)
 
 		case PAUSED:
 			// Keep timer stopped
+			time_running = 0;
 			break;
 
 		default:
@@ -398,16 +402,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM2)
     {
-        // 1. Timekeeping
-        ms_counter++;
+    	if (time_running) {
+			// 1. Timekeeping
+			ms_counter++;
 
-        if (ms_counter >= 10)
-        {
-            ms_counter = 0;
-            seconds++;
-        }
+			if (ms_counter >= 10)
+			{
+				ms_counter = 0;
+				seconds++;
+			}
+		}
 
-        Display_Scan();
+		Display_Scan();
     }
 }
 
