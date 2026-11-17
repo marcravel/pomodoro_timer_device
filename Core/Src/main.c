@@ -64,6 +64,9 @@ volatile uint32_t ms_counter = 0;
 volatile uint32_t seconds = 0;
 volatile uint32_t minutes = 0;
 
+uint8_t idle_position = 0;
+uint16_t idle_animation_counter = 0;
+
 volatile uint32_t goal = 25 * 60;
 volatile uint32_t pause_goal = 5 * 60;
 
@@ -82,6 +85,28 @@ const uint8_t digit_segments[10] = {
     0x07, // 7: ABC
     0x7F, // 8: ABCDEFG
     0x6F  // 9: ABCDFG
+};
+
+PomodoroState state = IDLE;
+
+typedef struct {
+    uint8_t digit;
+    uint8_t segment;
+} AnimationFrame;
+
+const AnimationFrame perimeter_animation[] = {
+    {0, 0},  // DIG1 A
+    {1, 0},  // DIG2 A
+    {2, 0},  // DIG3 A
+    {3, 0},  // DIG4 A
+    {3, 1},  // DIG4 B
+    {3, 2},  // DIG4 C
+    {3, 3},  // DIG4 D
+    {2, 3},  // DIG3 D
+    {1, 3},  // DIG2 D
+    {0, 3},  // DIG1 D
+    {0, 4},  // DIG1 E
+    {0, 5}   // DIG1 F
 };
 
 /* USER CODE END PV */
@@ -136,7 +161,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim2);
 
-  PomodoroState state = WORK;
 
   /* USER CODE END 2 */
 
@@ -345,7 +369,21 @@ void Display_Scan(void)
 	HAL_GPIO_WritePin(DIG4_GPIO_Port, DIG4_Pin, GPIO_PIN_RESET);
 
 	// 3. Set segments for current digit
-	Display_SetSegments(digit_segments[display_buffer[current_digit]]);
+	if (state == IDLE)
+	{
+	    if (current_digit == perimeter_animation[idle_position].digit)
+	    {
+	        Display_SetSegments(1U << perimeter_animation[idle_position].segment);
+	    }
+	    else
+	    {
+	        Display_SetSegments(0);
+	    }
+	}
+	else
+	{
+	    Display_SetSegments(digit_segments[display_buffer[current_digit]]);
+	}
 
 	// 4. Enable selected digit
 	switch (current_digit)
@@ -367,6 +405,23 @@ void Display_Scan(void)
 			break;
 	}
 	current_digit = (current_digit + 1) % 4;
+}
+
+void Display_IdleAnimationUpdate(void)
+{
+    idle_animation_counter++;
+
+    if (idle_animation_counter >= 150)
+    {
+        idle_animation_counter = 0;
+
+        idle_position++;
+
+        if (idle_position >= 12)
+        {
+            idle_position = 0;
+        }
+    }
 }
 
 void reset_display_buffer() {
@@ -412,6 +467,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				seconds++;
 			}
 		}
+    	if (state == IDLE)
+    	{
+    	    Display_IdleAnimationUpdate();
+    	}
 
 		Display_Scan();
     }
