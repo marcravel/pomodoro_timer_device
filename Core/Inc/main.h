@@ -59,6 +59,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define BTN1_Pin GPIO_PIN_0
 #define BTN1_GPIO_Port GPIOA
+#define BTN2_Pin GPIO_PIN_1
+#define BTN2_GPIO_Port GPIOA
 #define DSP_F_Pin GPIO_PIN_2
 #define DSP_F_GPIO_Port GPIOA
 #define DSP_E_Pin GPIO_PIN_3
@@ -71,6 +73,8 @@ void Error_Handler(void);
 #define DSP_B_GPIO_Port GPIOA
 #define DSP_A_Pin GPIO_PIN_7
 #define DSP_A_GPIO_Port GPIOA
+#define BTN3_Pin GPIO_PIN_8
+#define BTN3_GPIO_Port GPIOA
 #define DSP_G_Pin GPIO_PIN_10
 #define DSP_G_GPIO_Port GPIOA
 #define DSP_DP_Pin GPIO_PIN_11

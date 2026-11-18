@@ -57,11 +57,6 @@ typedef enum {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
-Button start_button = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
-Button reset_button = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
-Button mode_button  = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
-
 TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
@@ -73,8 +68,14 @@ volatile uint32_t minutes = 0;
 uint8_t idle_position = 0;
 uint16_t idle_animation_counter = 0;
 
-volatile uint32_t goal = 25 * 60;
-volatile uint32_t pause_goal = 5 * 60;
+uint16_t paused_animation_counter = 0;
+
+typedef struct {
+	uint32_t goal;
+	uint32_t pause_goal;
+	uint32_t long_pause_goal;
+	uint32_t session_number;
+} PomodoroSession;
 
 volatile uint8_t current_digit = 0;
 uint8_t display_buffer[4] = {0, 0, 0, 0};
@@ -94,6 +95,12 @@ const uint8_t digit_segments[10] = {
 };
 
 PomodoroState state = WORK;
+PomodoroSession session = {
+	.goal = 25 * 60,
+	.pause_goal = 5 * 60,
+	.long_pause_goal = 10 * 60,
+	.session_number = 4
+};
 
 typedef struct {
     uint8_t digit;
@@ -114,6 +121,10 @@ const AnimationFrame perimeter_animation[] = {
     {0, 4},  // DIG1 E
     {0, 5}   // DIG1 F
 };
+
+Button start_button = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
+Button reset_button = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
+Button mode_button  = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -166,6 +177,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim2);
 
+  uint32_t current_session_number = 0;
+  PomodoroState last_state;
 
   /* USER CODE END 2 */
 
@@ -186,17 +199,22 @@ int main(void)
 		case WORK:
 			// Run work timer
 			time_running = 1;
-			if (seconds >= goal) {
+			if (seconds >= session.goal) {
+				current_session_number++;
 				seconds = 0;
-				state = SHORT_BREAK;
+				if (current_session_number == session.session_number) {
+					current_session_number = 0;
+					state = LONG_BREAK;
+				} else {
+					state = SHORT_BREAK;
+				}
 			}
-
 			break;
 
 		case SHORT_BREAK:
 			// Run short break timer
 			time_running = 1;
-			if (seconds >= pause_goal) {
+			if (seconds >= session.pause_goal) {
 				seconds = 0;
 				state = WORK;
 			}
@@ -205,6 +223,11 @@ int main(void)
 
 		case LONG_BREAK:
 			// Run long break timer
+			time_running = 1;
+			if (seconds >= session.long_pause_goal) {
+				seconds = 0;
+				state = WORK;
+			}
 			break;
 
 		case PAUSED:
@@ -218,9 +241,18 @@ int main(void)
 
 	Display_UpdateBuffer(seconds);
 
-	if (Button_Pressed(BTN1_GPIO_Port, BTN1_Pin, &mode_button)) {
+	if (Button_Pressed(BTN1_GPIO_Port, BTN1_Pin, &reset_button)) {
 		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-		state = PAUSED;
+		seconds = 0;
+		state = WORK;
+	}
+	if (Button_Pressed(BTN2_GPIO_Port, BTN2_Pin, &start_button)) {
+		if (state != PAUSED) {
+			last_state = state;
+			state = PAUSED;
+		} else {
+			state = last_state;
+		}
 	}
   }
   /* USER CODE END 3 */
@@ -346,11 +378,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : BTN1_Pin */
-  GPIO_InitStruct.Pin = BTN1_Pin;
+  /*Configure GPIO pins : BTN1_Pin BTN2_Pin BTN3_Pin */
+  GPIO_InitStruct.Pin = BTN1_Pin|BTN2_Pin|BTN3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(BTN1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : DSP_F_Pin DSP_E_Pin DSP_D_Pin DSP_C_Pin
                            DSP_B_Pin DSP_A_Pin DSP_G_Pin DSP_DP_Pin
@@ -488,7 +520,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			// 1. Timekeeping
 			ms_counter++;
 
-			if (ms_counter >= 1000)
+			if (ms_counter >= 50)
 			{
 				ms_counter = 0;
 				seconds++;
