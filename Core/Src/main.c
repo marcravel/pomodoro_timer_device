@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "button.h"
 
 /* USER CODE END Includes */
 
@@ -56,6 +57,11 @@ typedef enum {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
+Button start_button = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
+Button reset_button = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
+Button mode_button  = {GPIO_PIN_RESET, GPIO_PIN_RESET, 0};
+
 TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
@@ -87,7 +93,7 @@ const uint8_t digit_segments[10] = {
     0x6F  // 9: ABCDFG
 };
 
-PomodoroState state = IDLE;
+PomodoroState state = WORK;
 
 typedef struct {
     uint8_t digit;
@@ -108,7 +114,6 @@ const AnimationFrame perimeter_animation[] = {
     {0, 4},  // DIG1 E
     {0, 5}   // DIG1 F
 };
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -183,7 +188,7 @@ int main(void)
 			time_running = 1;
 			if (seconds >= goal) {
 				seconds = 0;
-				state = IDLE;
+				state = SHORT_BREAK;
 			}
 
 			break;
@@ -212,6 +217,11 @@ int main(void)
 	}
 
 	Display_UpdateBuffer(seconds);
+
+	if (Button_Pressed(BTN1_GPIO_Port, BTN1_Pin, &mode_button)) {
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		state = PAUSED;
+	}
   }
   /* USER CODE END 3 */
 }
@@ -313,9 +323,13 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, DSP_F_Pin|DSP_E_Pin|DSP_D_Pin|DSP_C_Pin
@@ -324,6 +338,19 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, DIG2_Pin|DIG3_Pin|DIG4_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : BTN1_Pin */
+  GPIO_InitStruct.Pin = BTN1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(BTN1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : DSP_F_Pin DSP_E_Pin DSP_D_Pin DSP_C_Pin
                            DSP_B_Pin DSP_A_Pin DSP_G_Pin DSP_DP_Pin
@@ -461,7 +488,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			// 1. Timekeeping
 			ms_counter++;
 
-			if (ms_counter >= 10)
+			if (ms_counter >= 1000)
 			{
 				ms_counter = 0;
 				seconds++;
